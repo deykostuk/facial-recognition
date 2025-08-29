@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manage Users - Face Recognition Attendance</title>
+<script src="https://www.google.com/search?q=https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+<div class="container mx-auto p-4 sm:p-6 lg:p-8">
+<h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Manage Registered Users</h1>
+<p class="text-center text-gray-600 mb-8">Total Users: <span class="font-bold text-indigo-600">{{ totalreg }}</span></p>
+
+    <div class="bg-white p-6 rounded-xl shadow-lg">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Roll</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for i in range(l) %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ names[i] }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">{{ rolls[i] }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                            <a href="/deleteuser?user={{ userlist[i] }}" class="text-red-600 hover:text-red-900 font-semibold transition-colors duration-200">Delete</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="flex justify-center mt-8">
+        <a href="/" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-full transition-transform duration-200 transform hover:scale-105">Back to Home</a>
+    </div>
+</div>
+
+</body>
+</html>
