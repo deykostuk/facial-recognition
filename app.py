@@ -43,7 +43,8 @@ if f'Attendance-{datetoday}.csv' not in os.listdir('Attendance'):
     with open(f'Attendance/Attendance-{datetoday}.csv', 'w') as f:
         f.write('Name,Roll,Time')
 
-# CNN Model for embeddings
+# Global variable for the CNN embedding model
+embedding_model = None
 cnn_model_path = 'static/cnn_embedding_model.h5'
 
 def create_cnn_model():
@@ -59,33 +60,19 @@ def create_cnn_model():
     ])
     return model
 
-def get_embedding_model():
-    """Loads or creates the CNN model for embeddings."""
-    global cnn_model_path
-    try:
-        return keras_load_model(cnn_model_path)
-    except Exception as e:
-        print(f"Error loading existing model: {e}. Creating a new one.")
-        if os.path.exists(cnn_model_path):
-            os.remove(cnn_model_path)
-        model = create_cnn_model()
-        model.save(cnn_model_path)
-        return keras_load_model(cnn_model_path)
-
-
 # A function to extract a face and get its CNN embedding
 def get_face_embedding(img):
     """
     Extracts a face from an image and returns its CNN embedding.
     Returns None if no face is detected.
     """
+    global embedding_model
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     face_points = face_detector.detectMultiScale(gray, 1.2, 5, minSize=(20, 20))
     if len(face_points) > 0:
         (x, y, w, h) = face_points[0]
         face_img = cv2.resize(img[y:y+h, x:x+w], (IMG_SIZE, IMG_SIZE))
         face_img = np.expand_dims(face_img, axis=0) # Add batch dimension
-        embedding_model = get_embedding_model()
         embedding = embedding_model.predict(face_img, verbose=0)
         return embedding.flatten()
     return None
@@ -108,10 +95,10 @@ def train_model():
     Extracts CNN embeddings from all face images and trains a KNN classifier.
     Saves the trained KNN model.
     """
+    global embedding_model
     faces_embeddings = []
     labels = []
     userlist = os.listdir('static/faces')
-    embedding_model = get_embedding_model()
     
     for user in userlist:
         for imgname in os.listdir(f'static/faces/{user}'):
@@ -224,25 +211,33 @@ def deleteuser():
 @app.route('/start', methods=['GET'])
 def start():
     """Starts the real-time face recognition for attendance."""
+    global embedding_model
     names, rolls, times, l = extract_attendance()
 
     if 'face_recognition_model.pkl' not in os.listdir('static'):
         return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2, mess='There is no trained model in the static folder. Please add a new face to continue.')
-
-    ret = True
-    cap = cv2.VideoCapture(0)
     
+    # Use environment variable for video source, default to 0 (webcam)
+    video_source = os.getenv('VIDEO_SOURCE_URL', 0)
+    try:
+        cap = cv2.VideoCapture(video_source)
+    except Exception as e:
+        return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2, mess=f'Error accessing video source: {e}. Check if the URL is correct or the camera is available.')
+
     message = 'Face not recognized.'
     
-    while ret:
+    while True:
         ret, frame = cap.read()
+        if not ret:
+            message = "Failed to grab frame from video source."
+            break
+            
         faces = face_detector.detectMultiScale(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 1.2, 5, minSize=(20, 20))
         
         if len(faces) > 0:
             (x, y, w, h) = faces[0]
             face_img_for_recog = cv2.resize(frame[y:y+h, x:x+w], (IMG_SIZE, IMG_SIZE))
             
-            embedding_model = get_embedding_model()
             embedding = embedding_model.predict(np.expand_dims(face_img_for_recog, axis=0), verbose=0).flatten()
             
             identified_person = identify_face(embedding)
@@ -276,6 +271,7 @@ def start():
 @app.route('/add', methods=['GET', 'POST'])
 def add():
     """Handles adding a new user and capturing face images."""
+    global embedding_model
     if request.method == 'POST':
         newusername = request.form['newusername']
         newuserid = request.form['newuserid']
@@ -283,12 +279,23 @@ def add():
         
         if not os.path.isdir(userimagefolder):
             os.makedirs(userimagefolder)
+        
+        # Use environment variable for video source, default to 0 (webcam)
+        video_source = os.getenv('VIDEO_SOURCE_URL', 0)
+        try:
+            cap = cv2.VideoCapture(video_source)
+        except Exception as e:
+            names, rolls, times, l = extract_attendance()
+            return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2, mess=f'Error accessing video source: {e}. Check if the URL is correct or the camera is available.')
             
         i, j = 0, 0
-        cap = cv2.VideoCapture(0)
         
         while i < nimgs:
             ret, frame = cap.read()
+            if not ret:
+                names, rolls, times, l = extract_attendance()
+                return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2, mess="Failed to grab frame from video source. Please try again.")
+
             faces = face_detector.detectMultiScale(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 1.2, 5, minSize=(20, 20))
             for (x, y, w, h) in faces:
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 20), 2)
@@ -312,13 +319,24 @@ def add():
         train_model()
         
         names, rolls, times, l = extract_attendance()
-        return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2)
+        return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(), datetoday2=datetoday2, mess=f'Successfully added new user: {newusername}.')
     else:
         return redirect(url_for('home'))
 
 
 # Our main function which runs the Flask App
 if __name__ == '__main__':
-    # Initialize the CNN model at startup
-    get_embedding_model()
+    # Load the CNN model only once at startup
+    try:
+        if not os.path.exists(cnn_model_path):
+            print("Creating and saving a new CNN embedding model.")
+            model = create_cnn_model()
+            # Do not compile, as we only need it for inference
+            model.save(cnn_model_path)
+        embedding_model = keras_load_model(cnn_model_path, compile=False)
+        print("CNN embedding model loaded successfully.")
+    except Exception as e:
+        print(f"Error loading CNN model: {e}")
+        embedding_model = None
+
     app.run(debug=True)
